@@ -21,3 +21,10 @@ dev/
 
 # Results file
 results.tsv
+
+# VS Code settings
+.vscode/
+
+# logs
+logs/
+*.log
