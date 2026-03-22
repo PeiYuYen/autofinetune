@@ -6,8 +6,9 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-    # PyTorch (CUDA 12.8)
-    - torch==2.9.1+cu128 --index-url https://download.pytorch.org/whl/cu128
+    # PyTorch (CUDA 12.8) — index-url must be a separate line (pip requirements format)
+    - --extra-index-url https://download.pytorch.org/whl/cu128
+    - torch==2.9.1+cu128
     - triton==3.5.1
     # AutoFinetune core
     - transformers==5.3.0
