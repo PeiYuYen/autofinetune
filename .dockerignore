@@ -1,0 +1,7 @@
+.git
+.vscode
+output/
+results.tsv
+*.log
+__pycache__
+*.py[oc]

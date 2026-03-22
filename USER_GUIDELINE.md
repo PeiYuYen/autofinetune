@@ -191,3 +191,49 @@ output/ 目錄會堆積 adapter 檔案，可清理舊的：
 ls -lh output/
 rm -rf output/run_000{0..5}/  # 視情況刪除舊的
 ```
+
+---
+
+## Docker（在其他主機上執行）
+
+### 前置需求
+- NVIDIA GPU ≥24GB VRAM
+- 安裝 [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+- CUDA driver 12.x+
+
+### Build image
+```bash
+docker build -t autofinetune .
+```
+
+### 執行（互動模式）
+```bash
+docker run --gpus all -it \
+  -v $(pwd)/output:/workspace/output \
+  -v ~/.cache/huggingface:/workspace/.cache/huggingface \
+  autofinetune bash
+```
+
+### 執行（直接跑 agent loop）
+```bash
+docker run --gpus all \
+  -v $(pwd)/output:/workspace/output \
+  -v ~/.cache/huggingface:/workspace/.cache/huggingface \
+  autofinetune
+```
+
+### 在 tmux 內跑 Docker（推薦）
+```bash
+tmux new -s autofinetune
+docker run --gpus all \
+  -v $(pwd)/output:/workspace/output \
+  -v ~/.cache/huggingface:/workspace/.cache/huggingface \
+  autofinetune python orchestrate.py agent --fast 2>&1 | tee run.log
+# Ctrl+B d 分離，之後 tmux attach -t autofinetune 回來看
+```
+
+### 掛載說明
+| Host 路徑 | Container 路徑 | 用途 |
+|-----------|----------------|------|
+| `./output` | `/workspace/output` | 實驗輸出（adapter 權重） |
+| `~/.cache/huggingface` | `/workspace/.cache/huggingface` | HF 模型/資料集快取（避免重複下載） |
