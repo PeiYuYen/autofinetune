@@ -176,7 +176,7 @@ def train(output_dir: str = "./output/latest"):
         quantization_config=bnb_config,
         device_map="auto",
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         BASE_MODEL,
@@ -220,7 +220,7 @@ def train(output_dir: str = "./output/latest"):
         logging_steps=10,
         save_strategy="no",
         gradient_checkpointing=GRADIENT_CHECKPOINTING,
-        max_seq_length=MAX_SEQ_LENGTH,
+        max_length=MAX_SEQ_LENGTH,
         dataset_text_field="text",
         report_to="none",
         seed=42,
