@@ -71,6 +71,13 @@ conda activate autofinetune
 mamba activate autofinetune
 ```
 
+> **重建環境（第一次或環境損毀時）：**
+> ```bash
+> mamba env create -f environment.yml
+> mamba activate autofinetune
+> pip install torch==2.9.1+cu128 --index-url https://download.pytorch.org/whl/cu128
+> ```
+
 ### 3. 執行 Baseline（第一次啟動）
 
 ```bash
