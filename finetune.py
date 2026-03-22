@@ -46,9 +46,9 @@ WARMUP_RATIO = 0.03
 WEIGHT_DECAY = 0.01
 NUM_TRAIN_EPOCHS = 1
 MAX_STEPS = 200               # overrides epochs if set; -1 to disable
-PER_DEVICE_BATCH_SIZE = 4
-GRADIENT_ACCUMULATION_STEPS = 4
-MAX_SEQ_LENGTH = 2048
+PER_DEVICE_BATCH_SIZE = 2
+GRADIENT_ACCUMULATION_STEPS = 8
+MAX_SEQ_LENGTH = 1024
 GRADIENT_CHECKPOINTING = True
 OPTIM = "paged_adamw_8bit"    # "adamw_torch", "paged_adamw_8bit", "paged_adamw_32bit"
 
