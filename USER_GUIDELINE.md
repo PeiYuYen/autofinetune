@@ -194,6 +194,18 @@ rm -rf output/run_000{0..5}/  # 視情況刪除舊的
 
 ---
 
+## 將 GitHub Repo 改名為 autofinetune（手動）
+
+1. 開啟 https://github.com/PeiYuYen/autoresearch → **Settings → General**
+2. 將 Repository name 改為 `autofinetune` → **Rename**
+3. 改名後更新本地 remote URL：
+   ```bash
+   git remote set-url origin https://github.com/PeiYuYen/autofinetune.git
+   git remote -v  # 確認已更新
+   ```
+
+---
+
 ## Docker（在其他主機上執行）
 
 ### 前置需求
