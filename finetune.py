@@ -128,9 +128,9 @@ def load_and_mix_datasets() -> list[str]:
     for ds_name, subset, split, weight in DATASET_CONFIG:
         print(f"[finetune] Loading {ds_name} (subset={subset}, split={split}, weight={weight})")
         if subset:
-            ds = load_dataset(ds_name, subset, split=split, trust_remote_code=True)
+            ds = load_dataset(ds_name, subset, split=split)
         else:
-            ds = load_dataset(ds_name, split=split, trust_remote_code=True)
+            ds = load_dataset(ds_name, split=split)
 
         # Calculate how many samples from this dataset
         if DATASET_SAMPLE_SIZE is not None:
