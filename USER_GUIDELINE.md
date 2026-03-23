@@ -1,6 +1,6 @@
 # AutoFinetune 使用指南
 
-## 目前進度（2026-03-23）
+## 目前進度（2026-03-24）
 
 ### 已完成
 | 項目 | 狀態 |
@@ -10,8 +10,9 @@
 | mamba 環境 `autofinetune` 建立完成 | ✅ |
 | `finetune.py` API 相容性修正（trl v0.29+） | ✅ |
 | 實驗 branch `autofinetune/experiment` 建立 | ✅ |
-| **Baseline eval 成功取得真實分數** | ✅ |
-| **eval 基礎設施 bug 全數修復（見下方）** | ✅ |
+| eval 基礎設施 bug 全數修復 | ✅ |
+| **真實 Baseline 取得（run_0004）** | ✅ |
+| **正式實驗循環準備就緒** | ✅ |
 
 ### Eval 基礎設施修復記錄
 | Bug | 原因 | 修法 |
@@ -23,18 +24,22 @@
 | orchestrate eval timeout | EVAL_TIMEOUT=1800s 不夠跑 3 個 benchmark | 改為 3600s |
 | HumanEval 永遠 0.0 (TypeError) | evalplus 用 Python Fire，`--id_range 0 20` 解析成 int | 改為 `--id_range [0,20]` |
 
-### 第一個真實 Baseline（run_0001）
+### 真實 Baseline（run_0004）— 目前最高分
 ```
-composite_score: 0.161   ← 目前最高分（目標：持續超越此數字）
+composite_score: 0.378   ← 目前最高分（目標：持續超越此數字）
 ifeval_strict:   0.340
 math_500_em:     0.143
-humaneval_pass1: 0.000   ← 訓練資料無 code，下一步要修
+humaneval_pass1: 0.650
+commit: 3cf4c71
+description: baseline with fixed eval (OpenHermes+CodeFeedback+MetaMathQA)
 ```
 
-### 尚未完成
-- eval.py / orchestrate.py / finetune.py 的修復尚未 git commit
-- HumanEval 0.0（需加入程式碼訓練資料）
+> **注意**：run_0001 的 0.161 是 eval bug 未修前的錯誤分數（HumanEval 因 TypeError 全部為 0.0），不計入實驗歷史。run_0004 才是正確的起始基準。
+
+### 現況（2026-03-24）
 - 正式實驗循環尚未啟動
+- 目前 finetune.py dataset mix：OpenHermes 50% + CodeFeedback 30% + MetaMathQA 20%
+- 最弱項目：math_500_em (0.143)，IFEval (0.340) 也有提升空間
 
 ---
 
