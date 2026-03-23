@@ -1,6 +1,6 @@
 # AutoFinetune 使用指南
 
-## 目前進度（2026-03-22）
+## 目前進度（2026-03-23）
 
 ### 已完成
 | 項目 | 狀態 |
@@ -9,10 +9,32 @@
 | README 更新（加入 AutoFinetune 說明） | ✅ |
 | mamba 環境 `autofinetune` 建立完成 | ✅ |
 | `finetune.py` API 相容性修正（trl v0.29+） | ✅ |
-| 實驗 branch `autofinetune/mar22` 建立 | ✅ |
+| 實驗 branch `autofinetune/experiment` 建立 | ✅ |
+| **Baseline eval 成功取得真實分數** | ✅ |
+| **eval 基礎設施 bug 全數修復（見下方）** | ✅ |
+
+### Eval 基礎設施修復記錄
+| Bug | 原因 | 修法 |
+|-----|------|------|
+| CUDA OOM in finetune | batch_size=4 + seq_len=2048 超過 24GB | batch=2, seq_len=1024 |
+| IFEval/MATH timeout (30 min) | Qwen3-8B 預設開啟 thinking mode，每題生成數千 token | finetune.py merge 後自動 patch `chat_template.jinja` |
+| 所有分數為 0.0 | eval.py 找 `results.json`，lm_eval 實際存 `results_TIMESTAMP.json` | 改用 `startswith("results")` |
+| MATH timeout (7 subtask × 50 = 350 samples) | `--limit` 對每個子任務獨立生效 | `FAST_MATH_LIMIT = 7`（7×7=49 total）|
+| orchestrate eval timeout | EVAL_TIMEOUT=1800s 不夠跑 3 個 benchmark | 改為 3600s |
+| HumanEval 永遠 0.0 (TypeError) | evalplus 用 Python Fire，`--id_range 0 20` 解析成 int | 改為 `--id_range [0,20]` |
+
+### 第一個真實 Baseline（run_0001）
+```
+composite_score: 0.161   ← 目前最高分（目標：持續超越此數字）
+ifeval_strict:   0.340
+math_500_em:     0.143
+humaneval_pass1: 0.000   ← 訓練資料無 code，下一步要修
+```
 
 ### 尚未完成
-- Baseline 實驗尚未成功執行（第一次嘗試因 API bug crash，已修復，等待重新執行）
+- eval.py / orchestrate.py / finetune.py 的修復尚未 git commit
+- HumanEval 0.0（需加入程式碼訓練資料）
+- 正式實驗循環尚未啟動
 
 ---
 

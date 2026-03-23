@@ -17,7 +17,7 @@ import time
 
 import torch
 from datasets import load_dataset, concatenate_datasets
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model, PeftModel, TaskType
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -46,9 +46,9 @@ WARMUP_RATIO = 0.03
 WEIGHT_DECAY = 0.01
 NUM_TRAIN_EPOCHS = 1
 MAX_STEPS = 200               # overrides epochs if set; -1 to disable
-PER_DEVICE_BATCH_SIZE = 4
-GRADIENT_ACCUMULATION_STEPS = 4
-MAX_SEQ_LENGTH = 2048
+PER_DEVICE_BATCH_SIZE = 2
+GRADIENT_ACCUMULATION_STEPS = 8
+MAX_SEQ_LENGTH = 1024
 GRADIENT_CHECKPOINTING = True
 OPTIM = "paged_adamw_8bit"    # "adamw_torch", "paged_adamw_8bit", "paged_adamw_32bit"
 
@@ -266,6 +266,12 @@ def train(output_dir: str = "./output/latest"):
     t_train_end = time.time()
     training_seconds = t_train_end - t_train_start
 
+    # Capture stats before releasing model
+    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    num_params_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad) if hasattr(model, 'parameters') else 0
+    num_steps = train_result.global_step if hasattr(train_result, 'global_step') else MAX_STEPS
+    train_loss = train_result.training_loss if hasattr(train_result, 'training_loss') else 0.0
+
     # Save adapter
     adapter_path = os.path.join(output_dir, "adapter")
     model.save_pretrained(adapter_path)
@@ -273,20 +279,68 @@ def train(output_dir: str = "./output/latest"):
     print(f"[finetune] Adapter saved to {adapter_path}")
 
     # Merge and save for evaluation
+    # Reload base model in bfloat16 (not 4-bit) so the merged model is properly
+    # dequantized. merge_and_unload() on a QLoRA model preserves NF4 format,
+    # which causes lm-eval to run extremely slowly via bitsandbytes CPU ops.
     merged_path = os.path.join(output_dir, "merged")
-    print(f"[finetune] Merging adapter weights...")
-    merged_model = model.merge_and_unload()
+    print(f"[finetune] Merging adapter weights (reloading base in bfloat16)...")
+    del model
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
+    base_for_merge = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    peft_for_merge = PeftModel.from_pretrained(base_for_merge, adapter_path)
+    merged_model = peft_for_merge.merge_and_unload()
     merged_model.save_pretrained(merged_path)
     tokenizer.save_pretrained(merged_path)
+    # Patch generation_config to prevent repetition loops during lm-eval inference.
+    # Without repetition_penalty the model fills max_new_tokens with repeated text,
+    # causing IFEval to score 0 and Math/HumanEval to timeout.
+    gen_cfg_path = os.path.join(merged_path, "generation_config.json")
+    if os.path.exists(gen_cfg_path):
+        with open(gen_cfg_path) as _f:
+            _gcfg = json.load(_f)
+        _gcfg.setdefault("repetition_penalty", 1.15)
+        with open(gen_cfg_path, "w") as _f:
+            json.dump(_gcfg, _f, indent=2)
+    # Patch chat_template.jinja to disable Qwen3 thinking mode during lm-eval.
+    # Without this patch, Qwen3-8B generates long <think>...</think> chains for every
+    # eval prompt, causing IFEval/MATH/HumanEval to exceed their 30-min timeouts.
+    # The patch forces an empty think block, making the model skip reasoning and
+    # answer directly. This is safe: lm-eval measures task accuracy, not CoT quality.
+    _jinja_path = os.path.join(merged_path, "chat_template.jinja")
+    if os.path.exists(_jinja_path):
+        with open(_jinja_path) as _f:
+            _jinja = _f.read()
+        _thinking_on = (
+            "{%- if add_generation_prompt %}\n"
+            "    {{- '<|im_start|>assistant\\n' }}\n"
+            "    {%- if enable_thinking is defined and enable_thinking is false %}\n"
+            "        {{- '<think>\\n\\n</think>\\n\\n' }}\n"
+            "    {%- endif %}\n"
+            "{%- endif %}"
+        )
+        _thinking_off = (
+            "{%- if add_generation_prompt %}\n"
+            "    {{- '<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n' }}\n"
+            "{%- endif %}"
+        )
+        if _thinking_on in _jinja:
+            with open(_jinja_path, "w") as _f:
+                _f.write(_jinja.replace(_thinking_on, _thinking_off))
+            print(f"[finetune] Patched chat_template.jinja (disabled Qwen3 thinking for eval)")
     print(f"[finetune] Merged model saved to {merged_path}")
+    del base_for_merge, peft_for_merge, merged_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # Summary
     t_end = time.time()
-    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
-
-    num_params_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad) if hasattr(model, 'parameters') else 0
-    num_steps = train_result.global_step if hasattr(train_result, 'global_step') else MAX_STEPS
-    train_loss = train_result.training_loss if hasattr(train_result, 'training_loss') else 0.0
 
     print("---")
     print(f"training_seconds: {training_seconds:.1f}")

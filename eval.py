@@ -34,21 +34,23 @@ W_MATH = 1 / 3
 W_HUMANEVAL = 1 / 3
 
 # Fast eval limits (subsampled for speed during search)
-FAST_MATH_LIMIT = 100
-FAST_HUMANEVAL_LIMIT = 30
-# IFEval always runs in full (541 prompts, already fast enough)
+# NOTE: leaderboard_math_hard is a GROUP of 7 subtasks — --limit applies per subtask.
+# FAST_MATH_LIMIT=7 → 7 subtasks × 7 samples = 49 total (comparable to IFEval's 50).
+FAST_IFEVAL_LIMIT = 50
+FAST_MATH_LIMIT = 7
+FAST_HUMANEVAL_LIMIT = 20
 
 # Base model for loading adapters
 DEFAULT_BASE_MODEL = "Qwen/Qwen3-8B"
 
 
 def run_lm_eval(model_path: str, task: str, num_fewshot: int = 0,
-                limit: int | None = None, batch_size: str = "auto") -> dict:
+                limit: int | None = None, batch_size: str = "4") -> dict:
     """Run lm-evaluation-harness and return the results dict."""
     cmd = [
         sys.executable, "-m", "lm_eval",
         "--model", "hf",
-        "--model_args", f"pretrained={model_path},trust_remote_code=True",
+        "--model_args", f"pretrained={model_path},trust_remote_code=True,dtype=bfloat16",
         "--tasks", task,
         "--num_fewshot", str(num_fewshot),
         "--batch_size", batch_size,
@@ -68,8 +70,8 @@ def run_lm_eval(model_path: str, task: str, num_fewshot: int = 0,
     output_dir = f"/tmp/lm_eval_{task}"
     results_file = None
     for root, dirs, files in os.walk(output_dir):
-        for f in files:
-            if f == "results.json":
+        for f in sorted(files, reverse=True):  # newest first
+            if f.startswith("results") and f.endswith(".json"):
                 results_file = os.path.join(root, f)
                 break
         if results_file:
@@ -81,9 +83,9 @@ def run_lm_eval(model_path: str, task: str, num_fewshot: int = 0,
     return {}
 
 
-def eval_ifeval(model_path: str) -> float:
+def eval_ifeval(model_path: str, limit: int | None = None) -> float:
     """Evaluate IFEval prompt-level strict accuracy. Returns score in [0, 1]."""
-    results = run_lm_eval(model_path, "leaderboard_ifeval", num_fewshot=0)
+    results = run_lm_eval(model_path, "leaderboard_ifeval", num_fewshot=0, limit=limit)
     if not results:
         return 0.0
     try:
@@ -148,7 +150,8 @@ def eval_humaneval(model_path: str, limit: int | None = None) -> float:
             "--attn_implementation", "eager",
         ]
         if limit is not None:
-            codegen_cmd.extend(["--id_range", "0", str(limit)])
+            # Fire parses list args as "[0,N]" not "0 N" (the latter makes id_range=int → TypeError)
+            codegen_cmd.extend(["--id_range", f"[0,{limit}]"])
 
         result = subprocess.run(codegen_cmd, capture_output=True, text=True, timeout=1800)
         if result.returncode != 0:
@@ -232,6 +235,7 @@ def evaluate(model_path: str, fast: bool = False,
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
+    ifeval_limit = FAST_IFEVAL_LIMIT if fast else None
     math_limit = FAST_MATH_LIMIT if fast else None
     humaneval_limit = FAST_HUMANEVAL_LIMIT if fast else None
 
@@ -240,7 +244,7 @@ def evaluate(model_path: str, fast: bool = False,
 
     # Run benchmarks
     t0 = time.time()
-    ifeval_score = eval_ifeval(model_path)
+    ifeval_score = eval_ifeval(model_path, limit=ifeval_limit)
     t_ifeval = time.time() - t0
     print(f"[eval] IFEval: {ifeval_score:.4f} ({t_ifeval:.0f}s)")
 
