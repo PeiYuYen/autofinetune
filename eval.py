@@ -133,8 +133,16 @@ def eval_humaneval(model_path: str, limit: int | None = None) -> float:
 
     EvalPlus uses a two-step flow: codegen (generate solutions) → evaluate (run tests).
     The --id_range flag on codegen limits which problems to solve for fast eval.
+
+    Bug fixes vs original:
+    1. evalplus.evaluate asserts all 164 problems must be present — we pad missing ones
+       with stub solutions ("pass") so the assertion passes. pass@1 is then computed
+       only on the actually-generated problems (not the stubs) to avoid score dilution.
+    2. evalplus prints "pass@1:\\t0.XXX" (not "="), and the "humaneval+" label is on a
+       separate header line — we read _eval_results.json directly instead of parsing stdout.
     """
     import tempfile
+    import re
     root_dir = tempfile.mkdtemp(prefix="evalplus_")
 
     try:
@@ -159,45 +167,81 @@ def eval_humaneval(model_path: str, limit: int | None = None) -> float:
             print((result.stdout + result.stderr)[-2000:], file=sys.stderr)
             return 0.0
 
-        # Find the generated samples directory
-        samples_dir = None
+        # Find the generated samples file (.jsonl)
+        samples_path = None
         for dirpath, dirnames, filenames in os.walk(root_dir):
             for f in filenames:
                 if f.endswith(".jsonl"):
-                    samples_dir = os.path.join(dirpath, f)
+                    samples_path = os.path.join(dirpath, f)
                     break
-            if samples_dir:
+            if samples_path:
                 break
 
-        if not samples_dir:
+        if not samples_path:
             print("Warning: No EvalPlus samples found after codegen", file=sys.stderr)
             return 0.0
+
+        # Track which problems were actually generated (needed to compute honest pass@1
+        # on the evaluated subset, not the padded stubs).
+        generated_ids: set[str] = set()
+        with open(samples_path) as f:
+            for line in f:
+                if line.strip():
+                    generated_ids.add(json.loads(line)["task_id"])
+
+        # Bug fix 1: evalplus.evaluate requires all 164 problems in the samples file.
+        # When using --id_range, only a subset is generated.  Pad with stub solutions
+        # ("pass") for missing problems so the assertion inside evaluate() passes.
+        if limit is not None and len(generated_ids) < 164:
+            from evalplus.data import get_human_eval_plus
+            all_problems = get_human_eval_plus()
+            with open(samples_path, "a") as f:
+                for task_id, prob in all_problems.items():
+                    if task_id not in generated_ids:
+                        stub = prob["prompt"] + "    pass\n"
+                        f.write(json.dumps({"task_id": task_id, "solution": stub}) + "\n")
 
         # Step 2: Evaluate solutions
         eval_cmd = [
             sys.executable, "-m", "evalplus.evaluate",
             "humaneval",
-            "--samples", samples_dir,
+            "--samples", samples_path,
             "--i_just_wanna_run",
         ]
 
-        result = subprocess.run(eval_cmd, capture_output=True, text=True, timeout=600)
-        output = result.stdout + result.stderr
+        subprocess.run(eval_cmd, capture_output=True, text=True, timeout=600)
 
-        # Parse pass@1 from output
-        for line in output.split("\n"):
-            if "pass@1" in line.lower() and "humaneval+" in line.lower():
-                parts = line.split("=")
-                if len(parts) >= 2:
+        # Bug fix 2: evalplus prints "pass@1:\t0.XXX" (tab-separated, not "=") and the
+        # "humaneval+" header is on a DIFFERENT line from the score.  Read the JSON result
+        # file directly instead of parsing stdout.
+        eval_results_path = samples_path.replace(".jsonl", "_eval_results.json")
+        if os.path.exists(eval_results_path):
+            with open(eval_results_path) as f:
+                eval_data = json.load(f)
+
+            task_results = eval_data.get("eval", {})
+
+            # Compute pass@1 only on the actually-generated problems (not stubs).
+            # This avoids diluting the score by 164/limit when limit < 164.
+            relevant = {
+                tid: task_results[tid]
+                for tid in generated_ids
+                if tid in task_results
+            }
+            if relevant:
+                n_pass = sum(
+                    1 for res in relevant.values()
+                    if res and res[0]["base_status"] == "pass" and res[0]["plus_status"] == "pass"
+                )
+                return n_pass / len(relevant)
+
+        # Fallback: parse stdout with regex (handles "pass@1:\t0.XXX" and ANSI codes)
+        for line in (result.stdout + result.stderr).split("\n"):
+            if "pass@1" in line.lower():
+                match = re.search(r'pass@1[:\s\t]+([0-9.]+)', line, re.IGNORECASE)
+                if match:
                     try:
-                        return float(parts[-1].strip())
-                    except ValueError:
-                        continue
-            elif "pass@1" in line.lower():
-                parts = line.split("=")
-                if len(parts) >= 2:
-                    try:
-                        return float(parts[-1].strip())
+                        return float(match.group(1))
                     except ValueError:
                         continue
     except subprocess.TimeoutExpired:
