@@ -34,7 +34,7 @@ RUN_LOG = REPO_DIR / "run.log"
 
 # Timeout for finetune + eval combined (seconds)
 FINETUNE_TIMEOUT = 1800   # 30 min max for finetune
-EVAL_TIMEOUT = 1800       # 30 min max for eval
+EVAL_TIMEOUT = 3600       # 60 min max for eval (3 benchmarks × ~15-20 min each)
 
 # TSV header
 TSV_HEADER = "commit\tcomposite\tifeval\tmath\thumaneval\tvram_gb\tstatus\tdescription\n"
