@@ -56,7 +56,9 @@ OPTIM = "paged_adamw_8bit"    # "adamw_torch", "paged_adamw_8bit", "paged_adamw_
 # Each entry: (dataset_name, subset, split, weight)
 # Weight controls mixing ratio when multiple datasets are used
 DATASET_CONFIG = [
-    ("teknium/OpenHermes-2.5", None, "train", 1.0),
+    ("teknium/OpenHermes-2.5",                  None, "train", 0.5),
+    ("m-a-p/CodeFeedback-Filtered-Instruction", None, "train", 0.3),
+    ("meta-math/MetaMathQA",                    None, "train", 0.2),
 ]
 DATASET_SAMPLE_SIZE = 10000   # total samples across all datasets (None = use all)
 
